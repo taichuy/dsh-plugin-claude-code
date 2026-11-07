@@ -1,0 +1,13 @@
+- insert:
+    - id: preset-claude-code
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: claude-code
+        name: Claude Code
+        description: Claude Code instances with DSH and 1flowbase models.
+        order: 10
+        plugins:
+          - id: claude-code-route
+            name: 'dsh-plugin-claude-code/preset-route'
+    - id: llm-claude-code
+      name: 'dsh-plugin-claude-code'
