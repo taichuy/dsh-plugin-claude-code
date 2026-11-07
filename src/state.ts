@@ -59,6 +59,19 @@ export class InstanceStore {
     return row
   }
 
+  async patch(id: string, patch: Partial<ClaudeInstance>): Promise<ClaudeInstance> {
+    if (patch === null || typeof patch !== 'object' || Array.isArray(patch)) throw new Error('Invalid patch')
+    const allowed = new Set(['name', 'enabled', 'model', 'opusModel', 'sonnetModel', 'haikuModel',
+      'configDir', 'settingsFile', 'useClaudeSettings'])
+    for (const key of Object.keys(patch)) if (!allowed.has(key)) throw new Error(`Cannot update ${key}`)
+    await this.mutate(() => {
+      const index = this.instances.findIndex(row => row.id === id)
+      if (index < 0) throw new Error('Instance not found')
+      this.instances[index] = validateInstance({ ...this.instances[index], ...patch })
+    })
+    return this.get(id)!
+  }
+
   async remove(id: string): Promise<void> {
     if (id === 'local') throw new Error('Default local instance cannot be removed')
     await this.mutate(() => { this.instances = this.instances.filter(row => row.id !== id) })

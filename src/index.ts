@@ -81,6 +81,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
             const row = await store.put(await bodyOf(req) as InstanceInput)
             return respond(res, 200, { ok: true, data: row })
           }
+          if (req.method === 'PATCH' && path.startsWith('/instances/')) {
+            const row = await store.patch(decodeURIComponent(path.slice('/instances/'.length)),
+              await bodyOf(req) as Partial<import('./state.js').ClaudeInstance>)
+            return respond(res, 200, { ok: true, data: row })
+          }
           if (req.method === 'DELETE' && path.startsWith('/instances/')) {
             await store.remove(decodeURIComponent(path.slice('/instances/'.length)))
             return respond(res, 200, { ok: true, data: true })

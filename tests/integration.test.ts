@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest'
 import { InstanceStore } from '../src/state.js'
 import { flowbaseMcpServers, modelChoices, resolveInstance } from '../src/sources.js'
 import { directUserText } from '../src/prompt.js'
+import { prepareConfiguration } from '../src/configuration.js'
 
 let root = ''
 const oldHome = process.env.DSH_HOME
@@ -19,6 +20,11 @@ it('keeps instance settings in DSH_HOME and never changes the user Claude settin
   expect(row.id).toBeTruthy()
   expect(new InstanceStore()).toBeDefined()
   expect(JSON.parse(await readFile(join(root, 'dsh-plugin-claude-code', 'instances.json'), 'utf8'))).toHaveLength(2)
+  await Promise.all([
+    store.patch(row.id, { opusModel: 'claude-custom' }),
+    store.patch(row.id, { settingsFile: '/tmp/alternate-settings.json' }),
+  ])
+  expect(store.get(row.id)).toMatchObject({ opusModel: 'claude-custom', settingsFile: '/tmp/alternate-settings.json' })
 })
 
 it('offers only DSH Messages routes, and resolves 1flowbase model plus enabled MCP at launch', async () => {
@@ -55,4 +61,18 @@ it('sends the human prompt instead of DSH synthetic runtime context', () => {
     { role: 'user', source: { kind: 'runtime-context' }, content: [{ type: 'text', text: 'Context changed' }] },
   ] as never
   expect(directUserText(messages)).toBe('Reply OK')
+})
+
+it('loads an alternate Claude settings file without letting its provider env replace the selected instance', async () => {
+  const file = join(root, 'alternate-settings.json')
+  await writeFile(file, JSON.stringify({ model: 'wrong-model', env: { ANTHROPIC_BASE_URL: 'https://wrong.example',
+    ANTHROPIC_AUTH_TOKEN: 'fixture-secret' }, permissions: { deny: ['Bash(*)'] } }))
+  const prepared = await prepareConfiguration({ id: 'remote', name: 'Remote', source: 'dsh', enabled: true,
+    model: 'chosen-model', provider: 'gateway', useClaudeSettings: true, settingsFile: file })
+  expect(prepared.configDir).toContain(join(root, 'dsh-plugin-claude-code', 'claude-home', 'remote'))
+  expect(prepared.settingSources).toEqual([])
+  const safe = JSON.parse(await readFile(prepared.settingsPath!, 'utf8'))
+  expect(safe).toEqual({ permissions: { deny: ['Bash(*)'] } })
+  await prepared.cleanup()
+  await expect(readFile(prepared.settingsPath!, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
 })

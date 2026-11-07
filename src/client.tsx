@@ -40,7 +40,7 @@ function Panel() {
   const tierSelect = (value: string | undefined, options: ModelChoice[], onChange: (value: string | undefined) => void) =>
     <select value={value ?? ''} onChange={event => onChange(event.target.value || undefined)}>
       <option value="">跟随主模型</option>
-      {options.map(option => <option key={option.model} value={option.model}>{option.modelName}</option>)}
+      {options.map(option => <option key={option.model} value={option.model}>{option.modelName} · {option.model}</option>)}
     </select>
   const save = async () => {
     try {
@@ -58,8 +58,15 @@ function Panel() {
     } catch (error) { setError(error instanceof Error ? error.message : String(error)) }
   }
   const update = async (row: ClaudeInstance, patch: Partial<ClaudeInstance>) => {
-    try { await request('/instances', 'POST', { ...row, ...patch }); setError(''); await reload() }
-    catch (error) { setError(error instanceof Error ? error.message : String(error)) }
+    setInstances(current => current.map(item => item.id === row.id ? { ...item, ...patch } : item))
+    try {
+      await request(`/instances/${encodeURIComponent(row.id)}`, 'PATCH', patch)
+      setError('')
+    }
+    catch (error) {
+      setError(error instanceof Error ? error.message : String(error))
+      await reload().catch(() => {})
+    }
   }
   return <section style={{ maxWidth: 720, display: 'grid', gap: 12 }}>
     <h2>Claude Code 实例</h2>
@@ -77,17 +84,17 @@ function Panel() {
       <label><input type="checkbox" checked={row.useClaudeSettings} onChange={event => { void update(row, { useClaudeSettings: event.target.checked }) }} /> 启用 Claude Code 配置</label>
       <label>Claude 配置目录 <input value={row.configDir ?? ''} placeholder="默认目录"
         onChange={event => { const value = event.target.value; setInstances(current => current.map(item => item.id === row.id ? { ...item, configDir: value } : item)) }}
-        onBlur={() => { void update(row, { configDir: row.configDir || undefined }) }} /></label>
+        onBlur={event => { void update(row, { configDir: event.currentTarget.value || undefined }) }} /></label>
       <label>Claude 设置文件 <input value={row.settingsFile ?? ''} placeholder="可选，settings.json 的绝对路径"
         onChange={event => { const value = event.target.value; setInstances(current => current.map(item => item.id === row.id ? { ...item, settingsFile: value } : item)) }}
-        onBlur={() => { void update(row, { settingsFile: row.settingsFile || undefined }) }} /></label>
+        onBlur={event => { void update(row, { settingsFile: event.currentTarget.value || undefined }) }} /></label>
       {row.id !== 'local' && <button onClick={() => { void request(`/instances/${encodeURIComponent(row.id)}`, 'DELETE').then(reload).catch(error => setError(String(error))) }}>删除</button>}
     </div>)}
     <h3>添加模型实例</h3>
     <label>名称 <input value={name} onChange={event => setName(event.target.value)} /></label>
     <label>主模型 <select value={choice} onChange={event => { setChoice(event.target.value); setOpusModel(''); setSonnetModel(''); setHaikuModel('') }}>
       <option value="">选择 DSH Messages 或 1flowbase 模型</option>
-      {choices.map((row, index) => <option key={`${row.provider}/${row.model}`} value={index}>{row.providerName} · {row.modelName}</option>)}
+      {choices.map((row, index) => <option key={`${row.provider}/${row.model}`} value={index}>{row.providerName} · {row.modelName} · {row.model}</option>)}
     </select></label>
     {selectedChoice && <>
       <label>Opus 模型 {tierSelect(opusModel, modelsFor(selectedChoice), value => setOpusModel(value ?? ''))}</label>

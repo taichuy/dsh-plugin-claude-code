@@ -9,6 +9,7 @@ import { InstanceStore } from './state.js'
 import { resolveInstance } from './sources.js'
 import { SessionBindings } from './bindings.js'
 import { directUserText } from './prompt.js'
+import { prepareConfiguration } from './configuration.js'
 
 export interface AdapterOptions { executablePath: string; store: InstanceStore; bindings: SessionBindings }
 
@@ -57,6 +58,7 @@ export class ClaudeCodeAdapter extends LlmAdapter {
       baseUrl: resolved.baseUrl, configDir: instance.configDir, settingsFile: instance.settingsFile,
       useClaudeSettings: instance.useClaudeSettings,
       opusModel: instance.opusModel, sonnetModel: instance.sonnetModel, haikuModel: instance.haikuModel })
+    const prepared = await prepareConfiguration(instance)
     const abort = new AbortController()
     const onAbort = () => abort.abort(options.signal?.reason)
     options.signal?.addEventListener('abort', onAbort, { once: true })
@@ -80,27 +82,25 @@ export class ClaudeCodeAdapter extends LlmAdapter {
         ANTHROPIC_DEFAULT_HAIKU_MODEL: instance.haikuModel ?? resolved.model,
         ANTHROPIC_SMALL_FAST_MODEL: instance.haikuModel ?? resolved.model,
       }),
-      CLAUDE_CONFIG_DIR: instance.configDir ??
-        (instance.source === 'local' || instance.useClaudeSettings
-          ? process.env.CLAUDE_CONFIG_DIR
-          : `${process.env.DSH_HOME ?? `${process.env.HOME ?? ''}/.dsh`}/dsh-plugin-claude-code/claude-home/${instance.id}`),
+      ...(prepared.configDir === undefined ? {} : { CLAUDE_CONFIG_DIR: prepared.configDir }),
       CLAUDE_AGENT_SDK_CLIENT_APP: 'dsh-plugin-claude-code/0.1.0' }
-    const sdk = query({ prompt, options: {
+    let sdk: ReturnType<typeof query> | undefined
+    let answer = ''
+    let claudeSessionId: string | undefined
+    try {
+      sdk = query({ prompt, options: {
       pathToClaudeCodeExecutable: this.settings.executablePath,
       cwd: agent.session.header.cwd ?? process.cwd(),
       model: resolved.model === 'default' ? undefined : resolved.model,
-      settingSources: instance.useClaudeSettings ? ['user', 'project', 'local'] : [],
-      ...(instance.useClaudeSettings && instance.settingsFile ? { settings: instance.settingsFile } : {}),
+      settingSources: prepared.settingSources,
+      ...(prepared.settingsPath === undefined ? {} : { settings: prepared.settingsPath }),
       mcpServers: resolved.mcpServers,
       env,
       abortController: abort,
       permissionMode: 'default',
       canUseTool,
       ...(previous?.fingerprint === fingerprint ? { resume: previous.claudeSessionId } : {}),
-    } })
-    let answer = ''
-    let claudeSessionId: string | undefined
-    try {
+      } })
       for await (const message of sdk) {
         if (message.type === 'system' && message.subtype === 'init') claudeSessionId = message.session_id
         if (message.type === 'result') {
@@ -116,7 +116,8 @@ export class ClaudeCodeAdapter extends LlmAdapter {
       yield { type: 'finish', reason: { kind: 'stop' } }
     } finally {
       options.signal?.removeEventListener('abort', onAbort)
-      sdk.close()
+      sdk?.close()
+      await prepared.cleanup()
     }
   }
 }
