@@ -1,5 +1,5 @@
 import { query, type CanUseTool } from '@anthropic-ai/claude-agent-sdk'
-import { LlmAdapter, type GenerateOptions, type LlmModelInfo, type LlmResolvedModelInfo,
+import { LlmAdapter, ReasoningEffortId, type GenerateOptions, type LlmModelInfo, type LlmResolvedModelInfo,
   type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent'
@@ -12,6 +12,14 @@ import { directUserText } from './prompt.js'
 import { prepareConfiguration } from './configuration.js'
 
 export interface AdapterOptions { executablePath: string; store: InstanceStore; bindings: SessionBindings }
+
+const reasoningEfforts = [
+  { id: ReasoningEffortId('off'), name: 'Off' },
+  { id: ReasoningEffortId('low'), name: 'Low' },
+  { id: ReasoningEffortId('medium'), name: 'Medium' },
+  { id: ReasoningEffortId('high'), name: 'High' },
+  { id: ReasoningEffortId('xhigh'), name: 'Extra high' },
+]
 
 function childEnvironment(source: 'local' | 'dsh' | '1flowbase'): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {}
@@ -38,7 +46,8 @@ export class ClaudeCodeAdapter extends LlmAdapter {
   }
   override async resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
     const row = this.settings.store.get(model)
-    return { provider, id: model, name: row?.name ?? model, inputModalities: ['text', 'image'] }
+    return { provider, id: model, name: row?.name ?? model, inputModalities: ['text', 'image'],
+      reasoning: { efforts: reasoningEfforts } }
   }
 
   override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -83,7 +92,7 @@ export class ClaudeCodeAdapter extends LlmAdapter {
         ANTHROPIC_SMALL_FAST_MODEL: instance.haikuModel ?? resolved.model,
       }),
       ...(prepared.configDir === undefined ? {} : { CLAUDE_CONFIG_DIR: prepared.configDir }),
-      CLAUDE_AGENT_SDK_CLIENT_APP: 'dsh-plugin-claude-code/0.1.2' }
+      CLAUDE_AGENT_SDK_CLIENT_APP: 'dsh-plugin-claude-code/0.1.3' }
     let sdk: ReturnType<typeof query> | undefined
     let answer = ''
     let claudeSessionId: string | undefined
@@ -92,6 +101,9 @@ export class ClaudeCodeAdapter extends LlmAdapter {
       pathToClaudeCodeExecutable: this.settings.executablePath,
       cwd: agent.session.header.cwd ?? process.cwd(),
       model: resolved.model === 'default' ? undefined : resolved.model,
+      ...(options.reasoningEffort === 'off' ? { thinking: { type: 'disabled' as const } }
+        : options.reasoningEffort === undefined ? {}
+          : { effort: options.reasoningEffort as 'low' | 'medium' | 'high' | 'xhigh' }),
       settingSources: prepared.settingSources,
       ...(prepared.settingsPath === undefined ? {} : { settings: prepared.settingsPath }),
       mcpServers: resolved.mcpServers,

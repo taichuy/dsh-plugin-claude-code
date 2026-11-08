@@ -10,6 +10,8 @@
 
 一个供应商可以保存多份 Claude 配置。每份配置可单独命名、编辑和删除；同时只有一个实例处于启用状态。新建配置默认不启用，在列表中点击「启用」即可切换；删除当前实例后自动回到本地 Claude Code。当前实例作为 Claude Code preset 下的模型选项供对话选择。可分别指定主模型以及 Opus、Sonnet、Haiku 默认模型；未单独指定的层级跟随主模型。
 
+DSH 对话中的推理强度可选关闭、低、中、高、超高；插件在调用 Claude Code 时把所选强度传给 Claude Agent SDK。具体模型或上游供应商仍可能限制可用强度。
+
 ## 配置文件
 
 设置页提供实例专属的 JSON 编辑器。保存后写入 `$DSH_HOME/dsh-plugin-claude-code/configs/<实例 ID>.json`，权限为 `0600`。列表和文件只用于 DSH，不修改 `~/.claude/settings.json`、DSH 已有模型供应商或 1flowbase 的状态。

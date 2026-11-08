@@ -2,6 +2,10 @@ import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import LlmRuntime, { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { ClaudeCodeAdapter } from '../src/adapter.js'
+import { SessionBindings } from '../src/bindings.js'
 import { InstanceStore } from '../src/state.js'
 import { flowbaseMcpServers, modelChoices, providerChoices, resolveInstance } from '../src/sources.js'
 import { directUserText } from '../src/prompt.js'
@@ -50,6 +54,20 @@ it('keeps exactly one Claude Code instance active when switching, deleting, and 
   await migrated.load()
   expect(migrated.list().filter(row => row.enabled).map(row => row.id)).toEqual([first.id])
   expect(JSON.parse(await readFile(file, 'utf8')).filter((row: { enabled: boolean }) => row.enabled)).toHaveLength(1)
+})
+
+it('accepts DSH medium reasoning for the local Claude Code route', async () => {
+  const ctx = new Context()
+  await ctx.plugin(LlmRuntime)
+  const store = new InstanceStore()
+  await store.load()
+  ctx.llm.registerAdapter(['claude-code'], new ClaudeCodeAdapter(ctx, {
+    executablePath: 'claude', store, bindings: new SessionBindings(),
+  }))
+  expect(await ctx.llm.resolveCallConfig({ provider: 'claude-code', model: 'local',
+    reasoningEffort: ReasoningEffortId('medium') })).toMatchObject({ reasoningEffort: 'medium' })
+  await expect(ctx.llm.resolveCallConfig({ provider: 'claude-code', model: 'local',
+    reasoningEffort: ReasoningEffortId('max') })).rejects.toMatchObject({ code: 'UNSUPPORTED_REASONING_EFFORT' })
 })
 
 it('offers only DSH Messages routes, and resolves 1flowbase model plus enabled MCP at launch', async () => {
