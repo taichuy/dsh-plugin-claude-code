@@ -19,6 +19,7 @@ it('keeps instance settings in DSH_HOME and never changes the user Claude settin
   const row = await store.put({ name: 'Gateway', source: 'dsh', enabled: true,
     model: 'claude-custom', provider: 'gateway', useClaudeSettings: false })
   expect(row.id).toBeTruthy()
+  expect(store.list().filter(item => item.enabled).map(item => item.id)).toEqual([row.id])
   expect(new InstanceStore()).toBeDefined()
   expect(JSON.parse(await readFile(join(root, 'dsh-plugin-claude-code', 'instances.json'), 'utf8'))).toHaveLength(2)
   await Promise.all([
@@ -26,6 +27,29 @@ it('keeps instance settings in DSH_HOME and never changes the user Claude settin
     store.patch(row.id, { settingsFile: '/tmp/alternate-settings.json' }),
   ])
   expect(store.get(row.id)).toMatchObject({ opusModel: 'claude-custom', settingsFile: '/tmp/alternate-settings.json' })
+})
+
+it('keeps exactly one Claude Code instance active when switching, deleting, and loading old state', async () => {
+  const store = new InstanceStore()
+  await store.load()
+  const first = await store.put({ name: 'First', source: 'dsh', enabled: false,
+    model: 'first', provider: 'gateway', useClaudeSettings: true })
+  expect(store.list().filter(row => row.enabled).map(row => row.id)).toEqual(['local'])
+  await store.patch(first.id, { enabled: true })
+  expect(store.list().filter(row => row.enabled).map(row => row.id)).toEqual([first.id])
+  await expect(store.patch(first.id, { enabled: false })).rejects.toThrow('Activate another instance')
+  const second = await store.put({ name: 'Second', source: 'dsh', enabled: true,
+    model: 'second', provider: 'gateway', useClaudeSettings: true })
+  expect(store.list().filter(row => row.enabled).map(row => row.id)).toEqual([second.id])
+  await store.remove(second.id)
+  expect(store.list().filter(row => row.enabled).map(row => row.id)).toEqual(['local'])
+
+  const file = join(root, 'dsh-plugin-claude-code', 'instances.json')
+  await writeFile(file, JSON.stringify(store.list().map(row => ({ ...row, enabled: true }))))
+  const migrated = new InstanceStore()
+  await migrated.load()
+  expect(migrated.list().filter(row => row.enabled).map(row => row.id)).toEqual([first.id])
+  expect(JSON.parse(await readFile(file, 'utf8')).filter((row: { enabled: boolean }) => row.enabled)).toHaveLength(1)
 })
 
 it('offers only DSH Messages routes, and resolves 1flowbase model plus enabled MCP at launch', async () => {

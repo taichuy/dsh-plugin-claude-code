@@ -8,7 +8,7 @@
 - **DSH Messages**：只显示 DSH `llm-pi-ai` 中使用 `anthropic-messages` 协议的供应商；模型从该供应商的已注册目录选择，API Key 在启动对话时由 DSH 凭据服务解析。
 - **1flowbase**：显示 `1flowbase-dsh-plugin` 已导入的应用供应商与其模型。其模型经过 1flowbase 的 Messages 转换，可直接供 Claude Code 使用；已经启用的 1flowbase MCP 实例也会在下一回合启动时注入。
 
-一个供应商可以保存多份 Claude 配置。每份配置可单独命名、启用、停用、编辑和删除；已启用的配置作为 Claude Code preset 下的模型选项供对话选择。可分别指定主模型以及 Opus、Sonnet、Haiku 默认模型；未单独指定的层级跟随主模型。
+一个供应商可以保存多份 Claude 配置。每份配置可单独命名、编辑和删除；同时只有一个实例处于启用状态。新建配置默认不启用，在列表中点击「启用」即可切换；删除当前实例后自动回到本地 Claude Code。当前实例作为 Claude Code preset 下的模型选项供对话选择。可分别指定主模型以及 Opus、Sonnet、Haiku 默认模型；未单独指定的层级跟随主模型。
 
 ## 配置文件
 

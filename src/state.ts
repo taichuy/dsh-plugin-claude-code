@@ -38,6 +38,13 @@ export class InstanceStore {
       const raw: unknown = JSON.parse(await readFile(statePath(), 'utf8'))
       if (!Array.isArray(raw)) throw new Error('Invalid instance state')
       this.instances = raw.map(validateInstance)
+      const active = this.instances.filter(row => row.enabled)
+      if (active.length !== 1) {
+        const selected = active.at(-1) ?? this.instances.find(row => row.id === 'local') ?? this.instances[0]
+        if (!selected) throw new Error('Instance state is empty')
+        this.activate(selected.id)
+        await this.save()
+      }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
       this.instances = [{ id: 'local', name: '本地 Claude Code', source: 'local', enabled: true,
@@ -53,8 +60,12 @@ export class InstanceStore {
     const row = validateInstance({ ...input, id: input.id ?? randomUUID() })
     await this.mutate(() => {
       const index = this.instances.findIndex(item => item.id === row.id)
+      if (index >= 0 && this.instances[index].enabled && !row.enabled) {
+        throw new Error('Activate another instance to switch Claude Code configuration')
+      }
       if (index < 0) this.instances.push(row)
       else this.instances[index] = row
+      if (row.enabled) this.activate(row.id)
     })
     return row
   }
@@ -67,14 +78,25 @@ export class InstanceStore {
     await this.mutate(() => {
       const index = this.instances.findIndex(row => row.id === id)
       if (index < 0) throw new Error('Instance not found')
+      if (patch.enabled === false && this.instances[index].enabled) throw new Error('Activate another instance to switch Claude Code configuration')
       this.instances[index] = validateInstance({ ...this.instances[index], ...patch })
+      if (patch.enabled === true) this.activate(id)
     })
     return this.get(id)!
   }
 
   async remove(id: string): Promise<void> {
     if (id === 'local') throw new Error('Default local instance cannot be removed')
-    await this.mutate(() => { this.instances = this.instances.filter(row => row.id !== id) })
+    await this.mutate(() => {
+      const removed = this.instances.find(row => row.id === id)
+      if (!removed) throw new Error('Instance not found')
+      this.instances = this.instances.filter(row => row.id !== id)
+      if (removed.enabled) this.activate(this.instances.find(row => row.id === 'local')?.id ?? this.instances[0].id)
+    })
+  }
+
+  private activate(id: string): void {
+    this.instances = this.instances.map(row => ({ ...row, enabled: row.id === id }))
   }
 
   private async mutate(update: () => void): Promise<void> {

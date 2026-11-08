@@ -68,9 +68,8 @@ function ProviderCard({ row, provider, onEdit, onToggle, onDelete, busy }: {
     <div className="cc-card-bottom">
       <span className="cc-card-hint">{row.useClaudeSettings ? '使用 DSH 私有 Claude 配置' : '不加载实例配置文件'} · {row.enabled ? '对话模型列表中可选' : '对话模型列表中隐藏'}</span>
       <div className="cc-card-actions">
-        {!missing && <button className={`cc-btn${row.enabled ? ' cc-btn-quiet' : ' cc-btn-primary'}`} type="button" disabled={busy} onClick={onToggle}>
-          {row.enabled ? '停用' : '启用'}
-        </button>}
+        {!missing && (row.enabled ? <span className="cc-card-hint">当前使用</span>
+          : <button className="cc-btn cc-btn-primary" type="button" disabled={busy} onClick={onToggle}>启用</button>)}
         <button className="cc-btn" type="button" onClick={onEdit}>编辑配置</button>
         {row.id !== 'local' && (confirming
           ? <>
@@ -105,11 +104,11 @@ function Editor({ initial, seed, providers, onBack, onSaved }: {
   onSaved(): Promise<void>
 }) {
   const [draft, setDraft] = useState<InstanceInput>(() => initial ? { ...initial } : seed ? {
-    name: seed.name, source: seed.source, enabled: true, model: seed.models[0]?.id ?? '',
+    name: seed.name, source: seed.source, enabled: false, model: seed.models[0]?.id ?? '',
     provider: seed.source === 'dsh' ? seed.provider : undefined,
     flowbaseInstanceId: seed.flowbaseInstanceId, applicationId: seed.applicationId,
     useClaudeSettings: true,
-  } : { name: '', source: 'dsh', enabled: true, model: '', useClaudeSettings: true })
+  } : { name: '', source: 'dsh', enabled: false, model: '', useClaudeSettings: true })
   const [config, setConfig] = useState('{}\n')
   const [filePath, setFilePath] = useState('')
   const [busy, setBusy] = useState(false)
@@ -173,7 +172,7 @@ function Editor({ initial, seed, providers, onBack, onSaved }: {
       if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('配置顶层必须是 JSON 对象')
       const row = initial
         ? await request<ClaudeInstance>(`/instances/${encodeURIComponent(initial.id)}`, 'PATCH', {
-            name: draft.name.trim(), enabled: draft.enabled, model: draft.model,
+            name: draft.name.trim(), model: draft.model,
             opusModel: draft.opusModel, sonnetModel: draft.sonnetModel, haikuModel: draft.haikuModel,
             useClaudeSettings: draft.useClaudeSettings,
           })
@@ -245,9 +244,7 @@ function Editor({ initial, seed, providers, onBack, onSaved }: {
       </section>
 
       <section className="cc-section">
-        <div className="cc-section-head"><div><h3>实例行为</h3><p>启用的实例会出现在 DSH 对话的 Claude Code 模型列表中。</p></div></div>
-        <label className="cc-switch-row"><span><strong>启用实例</strong><small>允许在新对话中选择这份配置</small></span>
-          <input type="checkbox" checked={draft.enabled} onChange={event => setField('enabled', event.target.checked)} /></label>
+        <div className="cc-section-head"><div><h3>实例行为</h3><p>保存后在列表中启用；启用另一实例会自动切换，Claude Code 同时只使用一份配置。</p></div></div>
         <label className="cc-switch-row"><span><strong>使用 DSH 私有 Claude 配置</strong><small>下方 JSON 存在 DSH 插件目录，不改动 ~/.claude/settings.json</small></span>
           <input type="checkbox" checked={draft.useClaudeSettings} onChange={event => setField('useClaudeSettings', event.target.checked)} /></label>
       </section>
@@ -301,8 +298,9 @@ function Panel() {
     setBusyId(row.id)
     setError('')
     try {
-      await request(`/instances/${encodeURIComponent(row.id)}`, 'PATCH', { enabled: !row.enabled })
+      await request(`/instances/${encodeURIComponent(row.id)}`, 'PATCH', { enabled: true })
       await reload()
+      setStatus(`已启用「${row.name}」`)
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
     finally { setBusyId(undefined) }
   }
