@@ -3,9 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { InstanceStore } from '../src/state.js'
-import { flowbaseMcpServers, modelChoices, resolveInstance } from '../src/sources.js'
+import { flowbaseMcpServers, modelChoices, providerChoices, resolveInstance } from '../src/sources.js'
 import { directUserText } from '../src/prompt.js'
 import { prepareConfiguration } from '../src/configuration.js'
+import { readConfig, writeConfig } from '../src/config-files.js'
 
 let root = ''
 const oldHome = process.env.DSH_HOME
@@ -45,6 +46,9 @@ it('offers only DSH Messages routes, and resolves 1flowbase model plus enabled M
     if (name === 'credentials') return { resolve: async () => ({ value: 'dsh-secret' }) }
   } } as never
   expect((await modelChoices(ctx)).map(row => row.model)).toEqual(['claude-custom', 'translated-claude'])
+  expect((await providerChoices(ctx)).map(row => ({ source: row.source, models: row.models.length }))).toEqual([
+    { source: 'dsh', models: 1 }, { source: '1flowbase', models: 1 },
+  ])
   const resolved = await resolveInstance(ctx, { id: 'fb-instance', name: 'Flow', source: '1flowbase', enabled: true,
     model: 'translated-claude', opusModel: 'translated-claude', flowbaseInstanceId: 'fb1', applicationId: 'app1', useClaudeSettings: false })
   expect(resolved).toMatchObject({ model: 'translated-claude', baseUrl: 'https://flow.example', apiKey: 'app-secret' })
@@ -68,11 +72,31 @@ it('loads an alternate Claude settings file without letting its provider env rep
   await writeFile(file, JSON.stringify({ model: 'wrong-model', env: { ANTHROPIC_BASE_URL: 'https://wrong.example',
     ANTHROPIC_AUTH_TOKEN: 'fixture-secret' }, permissions: { deny: ['Bash(*)'] } }))
   const prepared = await prepareConfiguration({ id: 'remote', name: 'Remote', source: 'dsh', enabled: true,
-    model: 'chosen-model', provider: 'gateway', useClaudeSettings: true, settingsFile: file })
+    model: 'chosen-model', provider: 'gateway', useClaudeSettings: true, settingsFile: file },
+    { model: 'chosen-model', baseUrl: 'https://gateway.example' })
   expect(prepared.configDir).toContain(join(root, 'dsh-plugin-claude-code', 'claude-home', 'remote'))
   expect(prepared.settingSources).toEqual([])
   const safe = JSON.parse(await readFile(prepared.settingsPath!, 'utf8'))
-  expect(safe).toEqual({ permissions: { deny: ['Bash(*)'] } })
+  expect(safe.permissions).toEqual({ deny: ['Bash(*)'] })
+  expect(safe.model).toBe('chosen-model')
+  expect(safe.env).toMatchObject({ ANTHROPIC_BASE_URL: 'https://gateway.example',
+    ANTHROPIC_MODEL: 'chosen-model', ANTHROPIC_DEFAULT_OPUS_MODEL: 'chosen-model' })
+  expect(safe.env).not.toHaveProperty('ANTHROPIC_AUTH_TOKEN')
   await prepared.cleanup()
   await expect(readFile(prepared.settingsPath!, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it('edits a DSH-owned JSON file and uses it without changing the user settings file', async () => {
+  const instance = { id: 'profile-one', name: 'Profile', source: 'dsh' as const, enabled: true,
+    model: 'main', provider: 'gateway', useClaudeSettings: true }
+  const source = join(root, 'user-settings.json')
+  await writeFile(source, '{"theme":"unchanged"}')
+  const editable = '{\n  "permissions": { "deny": ["Bash(*)"] },\n  "env": { "ANTHROPIC_AUTH_TOKEN": "fixture" }\n}\n'
+  const path = await writeConfig(instance.id, editable)
+  expect((await readConfig(instance.id)).text).toBe(editable)
+  const prepared = await prepareConfiguration(instance, { model: 'main', baseUrl: 'https://gateway.example' })
+  expect(prepared.settingsPath).not.toBe(path)
+  expect(JSON.parse(await readFile(prepared.settingsPath!, 'utf8')).env).not.toHaveProperty('ANTHROPIC_AUTH_TOKEN')
+  expect(await readFile(source, 'utf8')).toBe('{"theme":"unchanged"}')
+  await prepared.cleanup()
 })

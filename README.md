@@ -1,12 +1,24 @@
 # dsh-plugin-claude-code
 
-在 DeepSeek Harness 的主对话中运行本机 Claude Code，并把 DSH `anthropic-messages` 模型及 1flowbase 已导入模型、已启用 MCP 注入到 Claude Code 会话。
+在 DeepSeek Harness 的主对话中运行本机 Claude Code。插件借鉴 CC Switch 的供应商列表与配置编辑方式，但只使用 DSH 中已经注册的供应商和凭据。
 
-## 安装
+## 可用来源
 
-要求 DSH Web profile、Node.js 20+ 与本机 Claude Code CLI。使用本地认证的默认实例要求 Claude Code 已可在终端正常调用；使用 DSH 或 1flowbase 模型的实例通过已有 API Key 接入。
+- **本地 Claude Code**：默认配置，沿用本机已登录的 Claude Code。
+- **DSH Messages**：只显示 DSH `llm-pi-ai` 中使用 `anthropic-messages` 协议的供应商；模型从该供应商的已注册目录选择，API Key 在启动对话时由 DSH 凭据服务解析。
+- **1flowbase**：显示 `1flowbase-dsh-plugin` 已导入的应用供应商与其模型。其模型经过 1flowbase 的 Messages 转换，可直接供 Claude Code 使用；已经启用的 1flowbase MCP 实例也会在下一回合启动时注入。
 
-目前 npm 发布待完成，可先从源码安装：
+一个供应商可以保存多份 Claude 配置。每份配置可单独命名、启用、停用、编辑和删除；已启用的配置作为 Claude Code preset 下的模型选项供对话选择。可分别指定主模型以及 Opus、Sonnet、Haiku 默认模型；未单独指定的层级跟随主模型。
+
+## 配置文件
+
+设置页提供实例专属的 JSON 编辑器。保存后写入 `$DSH_HOME/dsh-plugin-claude-code/configs/<实例 ID>.json`，权限为 `0600`。列表和文件只用于 DSH，不修改 `~/.claude/settings.json`、DSH 已有模型供应商或 1flowbase 的状态。
+
+远程模型实例启动时，插件从该文件构造临时 Claude 设置层：保留其他设置，把模型、Messages 地址及模型层级锁定为所选供应商；供应商 API Key 只在启动时进入进程环境，不写入编辑文件。临时层在回合结束后删除。远程实例不加载项目级 Claude 设置和 `CLAUDE.md`；本地实例仍使用 Claude Code 原有设置层级。旧版实例填写的外部设置文件路径只作兼容读取，保存新的 JSON 后改用 DSH 私有文件。
+
+## 安装与使用
+
+要求 DSH Web profile、Node.js 20+ 和本机 Claude Code CLI。目前 npm 发布待完成，可先从源码安装：
 
 ```sh
 git clone https://github.com/taichuy/dsh-plugin-claude-code.git
@@ -16,26 +28,15 @@ npm run check
 dsh plugin --profile web add "link:$(pwd)"
 ```
 
-发布到 npm 后可直接使用 `dsh plugin --profile web add dsh-plugin-claude-code`。
+安装后重启 DSH Web，在 **设置 → Claude Code** 中添加配置：先选供应商，再选择该供应商的模型并编辑 JSON。新建对话选择 **Claude Code** Agent Preset，然后在模型列表选择已启用的配置。
 
-重启 DSH Web 后，在设置页打开 **Claude Code**，从已注册的 DSH Messages 或 1flowbase 模型建立实例。新建对话选择 **Claude Code** Agent Preset，再从模型选择器选择实例。默认的“本地 Claude Code”实例使用现有认证与配置。实例可单独启用、停用和删除；本地默认实例始终保留。
+DSH 当前没有 Messages 供应商时，设置页会显示提示；在 DSH「模型」中先配置一个 `anthropic-messages` 供应商，或直接选用已导入的 1flowbase 应用。发布到 npm 后可用 `dsh plugin --profile web add dsh-plugin-claude-code` 安装。
 
-## 配置与边界
-
-- DSH 来源只列出 `llm-pi-ai` 中协议为 `anthropic-messages` 且配置了端点、模型与凭据引用的供应商。启动会话时经 DSH 凭据服务重新解析 API Key，不在本插件的实例文件中保存它。
-- 1flowbase 来源列出已导入 Agent Flow 应用发布的模型。它们的模型 ID 和应用 API Key 来自现有 `1flowbase-dsh-plugin` 状态；Claude Code 直接调用 1flowbase 的 Messages 兼容端点。
-- 每个实例可分别指定主模型与 Opus、Sonnet、Haiku 层级的模型；层级未指定时映射到主模型，避免 Claude Code 的内部任务调用供应商未发布的默认 Claude 模型名。
-- 1flowbase 已启用的 MCP 实例在每次 Claude Code 启动时重新读取，并作为 HTTP MCP server 注入。停用或新增后，下一个 Claude Code 会话或恢复的下一个回合生效。
-- **启用 Claude Code 配置** 控制是否加载 Claude Code 设置来源。可填写绝对路径的设置文件或配置目录。远程模型实例会读取该文件，把除 `env` 和 `model` 外的设置临时复制到 DSH 插件目录；供应商地址、凭据和主模型始终来自所选实例。远程实例不加载项目级 Claude 设置和 `CLAUDE.md`；本地实例仍按 Claude Code 原有层级加载。插件不写入 `~/.claude/settings.json`。
-- 实例保存在 `$DSH_HOME/dsh-plugin-claude-code/instances.json`，会话关联保存在同目录的 `sessions/`。它们仅影响 DSH 的 Claude Code preset；不会修改用户默认 Claude Code 模型或配置。
-- Claude Code 仍拥有内部工具循环；需授权的工具调用交由 DSH 审批服务。对话文本在 Claude Code 完成一个回合后显示。
-
-## 从源码验证
+## 验证
 
 ```sh
-npm install --legacy-peer-deps
 npm run check
-dsh plugin --profile web add "link:$(pwd)"
+npm pack
 ```
 
-本插件使用 DSH 的公开插件接口，不改动 DSH 源码。
+插件使用 DSH 公共接口，不修改 DSH 或 Claude Code 源码。

@@ -5,7 +5,7 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ClaudeInstance } from './state.js'
 
-interface DshProvider { api?: string; baseURL?: string; apiKeyEnv?: string; models?: { id: string; name?: string }[] }
+interface DshProvider { api?: string; baseURL?: string; apiKeyEnv?: string; displayName?: string; models?: { id: string; name?: string }[] }
 interface FlowbaseState { instances: {
   id: string; name: string; baseUrl: string; token: string
   applications: { applicationId: string; name: string; apiKey: string; models: { id: string; name?: string }[] }[]
@@ -14,6 +14,16 @@ interface FlowbaseState { instances: {
 
 export interface ModelChoice { source: 'dsh' | '1flowbase'; provider: string; providerName: string;
   model: string; modelName: string; flowbaseInstanceId?: string; applicationId?: string }
+export interface ProviderChoice {
+  id: string
+  source: 'dsh' | '1flowbase'
+  provider: string
+  name: string
+  endpoint?: string
+  models: { id: string; name: string }[]
+  flowbaseInstanceId?: string
+  applicationId?: string
+}
 export interface ResolvedInstance { model: string; baseUrl?: string; apiKey?: string;
   mcpServers: Record<string, { type: 'http'; url: string; headers: Record<string, string> }> }
 
@@ -46,18 +56,31 @@ export async function flowbaseState(): Promise<FlowbaseState> {
   }
 }
 
-export async function modelChoices(ctx: Context): Promise<ModelChoice[]> {
+export async function providerChoices(ctx: Context): Promise<ProviderChoice[]> {
   const dsh = (await Promise.all(Object.entries(dshProviders(ctx)).map(async ([provider, profile]) => {
     if (!messagesProfile(provider, profile) || (provider !== 'anthropic' && !profile.baseURL)) return []
     const models = await configuredModels(ctx, provider, profile).catch(() => [])
-    return models.map(model => ({ source: 'dsh' as const, provider,
-      providerName: provider, model: model.id, modelName: model.name ?? model.id }))
+    return [{ id: `dsh:${provider}`, source: 'dsh' as const, provider,
+      name: profile.displayName ?? provider, endpoint: profile.baseURL,
+      models: models.map(model => ({ id: model.id, name: model.name ?? model.id })) }]
   }))).flat()
-  const flowbase = (await flowbaseState()).instances.flatMap(instance => instance.applications.flatMap(app =>
-    app.models.map(model => ({ source: '1flowbase' as const, provider: `${instance.id}/${app.applicationId}`,
-      providerName: `${instance.name} / ${app.name}`, model: model.id, modelName: model.name ?? model.id,
-      flowbaseInstanceId: instance.id, applicationId: app.applicationId }))))
+  const flowbase = (await flowbaseState()).instances.flatMap(instance => instance.applications.map(app => ({
+    id: `1flowbase:${instance.id}:${app.applicationId}`, source: '1flowbase' as const,
+    provider: `${instance.id}/${app.applicationId}`, name: `${instance.name} / ${app.name}`,
+    endpoint: instance.baseUrl,
+    models: app.models.map(model => ({ id: model.id, name: model.name ?? model.id })),
+    flowbaseInstanceId: instance.id, applicationId: app.applicationId,
+  })))
   return [...dsh, ...flowbase]
+}
+
+export async function modelChoices(ctx: Context): Promise<ModelChoice[]> {
+  return (await providerChoices(ctx)).flatMap(choice => choice.models.map(model => ({
+    source: choice.source, provider: choice.provider, providerName: choice.name,
+    model: model.id, modelName: model.name,
+    ...(choice.flowbaseInstanceId === undefined ? {} : { flowbaseInstanceId: choice.flowbaseInstanceId }),
+    ...(choice.applicationId === undefined ? {} : { applicationId: choice.applicationId }),
+  })))
 }
 
 /** Resolve secrets only at launch. They are never returned by settings routes. */

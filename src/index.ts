@@ -14,8 +14,9 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-llm'
 import { ClaudeCodeAdapter } from './adapter.js'
 import { SessionBindings } from './bindings.js'
-import { modelChoices } from './sources.js'
+import { modelChoices, providerChoices } from './sources.js'
 import { InstanceStore, type InstanceInput } from './state.js'
+import { readConfig, removeConfig, writeConfig } from './config-files.js'
 
 export const name = 'dsh-plugin-claude-code'
 export const inject = ['llm', 'agents', 'agentPresets', 'connection']
@@ -48,7 +49,7 @@ async function bodyOf(req: IncomingMessage): Promise<unknown> {
   let raw = ''
   for await (const chunk of req) {
     raw += String(chunk)
-    if (raw.length > 32_768) throw new Error('Request is too large')
+    if (raw.length > 512 * 1024) throw new Error('Request is too large')
   }
   return JSON.parse(raw) as unknown
 }
@@ -76,6 +77,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
             .slice('/api/dsh-claude-code'.length)
           if (req.method === 'GET' && path === '/instances') return respond(res, 200, { ok: true, data: store.list() })
           if (req.method === 'GET' && path === '/models') return respond(res, 200, { ok: true, data: await modelChoices(ctx) })
+          if (req.method === 'GET' && path === '/providers') return respond(res, 200, { ok: true, data: await providerChoices(ctx) })
+          const configMatch = /^\/instances\/([^/]+)\/config$/u.exec(path)
+          if (req.method === 'GET' && configMatch) {
+            const id = decodeURIComponent(configMatch[1])
+            if (!store.get(id)) throw new Error('Instance not found')
+            return respond(res, 200, { ok: true, data: await readConfig(id) })
+          }
           if (!sameOrigin(req) || req.headers['x-dsh-claude-code-request'] !== '1') return respond(res, 403, { ok: false, error: 'Forbidden' })
           if (req.method === 'POST' && path === '/instances') {
             const row = await store.put(await bodyOf(req) as InstanceInput)
@@ -86,8 +94,17 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
               await bodyOf(req) as Partial<import('./state.js').ClaudeInstance>)
             return respond(res, 200, { ok: true, data: row })
           }
+          if (req.method === 'PUT' && configMatch) {
+            const id = decodeURIComponent(configMatch[1])
+            if (!store.get(id)) throw new Error('Instance not found')
+            const input = await bodyOf(req) as { text?: unknown }
+            const file = await writeConfig(id, input?.text as string)
+            return respond(res, 200, { ok: true, data: { path: file } })
+          }
           if (req.method === 'DELETE' && path.startsWith('/instances/')) {
-            await store.remove(decodeURIComponent(path.slice('/instances/'.length)))
+            const id = decodeURIComponent(path.slice('/instances/'.length))
+            await store.remove(id)
+            await removeConfig(id)
             return respond(res, 200, { ok: true, data: true })
           }
           respond(res, 404, { ok: false, error: 'Not found' })

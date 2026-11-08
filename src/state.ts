@@ -102,6 +102,7 @@ export function validateInstance(value: unknown): ClaudeInstance {
   const row = value as Record<string, unknown>
   if (row.source !== 'local' && row.source !== 'dsh' && row.source !== '1flowbase') throw new Error('Invalid source')
   const id = validText(row.id, 'id')
+  if (!/^[A-Za-z0-9_-]{1,128}$/u.test(id)) throw new Error('Invalid instance id')
   const name = validText(row.name, 'name')
   const model = validText(row.model, 'model')
   const opusModel = row.opusModel === undefined || row.opusModel === '' ? undefined : validText(row.opusModel, 'opusModel')

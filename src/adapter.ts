@@ -58,7 +58,7 @@ export class ClaudeCodeAdapter extends LlmAdapter {
       baseUrl: resolved.baseUrl, configDir: instance.configDir, settingsFile: instance.settingsFile,
       useClaudeSettings: instance.useClaudeSettings,
       opusModel: instance.opusModel, sonnetModel: instance.sonnetModel, haikuModel: instance.haikuModel })
-    const prepared = await prepareConfiguration(instance)
+    const prepared = await prepareConfiguration(instance, resolved)
     const abort = new AbortController()
     const onAbort = () => abort.abort(options.signal?.reason)
     options.signal?.addEventListener('abort', onAbort, { once: true })
@@ -83,7 +83,7 @@ export class ClaudeCodeAdapter extends LlmAdapter {
         ANTHROPIC_SMALL_FAST_MODEL: instance.haikuModel ?? resolved.model,
       }),
       ...(prepared.configDir === undefined ? {} : { CLAUDE_CONFIG_DIR: prepared.configDir }),
-      CLAUDE_AGENT_SDK_CLIENT_APP: 'dsh-plugin-claude-code/0.1.0' }
+      CLAUDE_AGENT_SDK_CLIENT_APP: 'dsh-plugin-claude-code/0.1.1' }
     let sdk: ReturnType<typeof query> | undefined
     let answer = ''
     let claudeSessionId: string | undefined
